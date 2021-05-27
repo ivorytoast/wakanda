@@ -1,0 +1,183 @@
+package vision
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"time"
+	"wakanda/common"
+)
+
+const (
+	rateLimitRetryCount = 3
+	rateLimitRetryDelay = time.Second
+)
+
+var (
+	DefaultClient = NewClient(common.TestCredentials())
+	paperBase = "https://paper-api.alpaca.markets"
+	base = "https://api.alpaca.markets"
+	dataURL = "https://data.alpaca.markets"
+	apiVersion = "v2"
+	clientTimeout = 10 * time.Second
+	do = defaultDo
+)
+
+type Client struct {
+	credentials *common.APIKey
+}
+
+type APIError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e *APIError) Error() string {
+	return e.Message
+}
+
+func NewClient(credentials *common.APIKey) *Client {
+	return &Client{credentials: credentials}
+}
+
+func GetLastQuote(symbol string) (*LastQuoteResponse, error) {
+	return DefaultClient.GetLastQuote(symbol)
+}
+
+func defaultDo(c *Client, req *http.Request) (*http.Response, error) {
+	if c.credentials.OAuth != "" {
+		req.Header.Set("Authorization", "Bearer " + c.credentials.OAuth)
+	} else {
+		req.Header.Set("APCA-API-KEY-ID", c.credentials.ID)
+		req.Header.Set("APCA-API-SECRET-KEY", c.credentials.Secret)
+	}
+
+	client := &http.Client{
+		Timeout: clientTimeout,
+	}
+	var resp *http.Response
+	var err error
+	for i := 0; ; i++ {
+		resp, err = client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusTooManyRequests {
+			break
+		}
+		if i >= rateLimitRetryCount {
+			break
+		}
+		time.Sleep(rateLimitRetryDelay)
+	}
+
+	if err = verify(resp); err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func (client *Client) get(u *url.URL) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return do(client, req)
+}
+
+func init() {
+	apiEnvURL := os.Getenv("APCA_API_BASE_URL")
+	apiLegacyURL := os.Getenv("ALPACA_BASE_URL")
+	if apiEnvURL != "" {
+		base = apiEnvURL
+	} else if apiLegacyURL != "" {
+		base = apiLegacyURL
+	}
+
+	dataEnvURL := os.Getenv("APCA_DATA_URL")
+	if dataEnvURL != "" {
+		dataURL = dataEnvURL
+	}
+
+	apiEnvVersion := os.Getenv("APCA_API_VERSION")
+	if apiEnvVersion != "" {
+		apiVersion = apiEnvVersion
+	}
+
+	clientEnvTimeout := os.Getenv("APCA_API_CLIENT_TIMEOUT")
+	if clientEnvTimeout != "" {
+		parsedTimeout, err := time.ParseDuration(clientEnvTimeout)
+		if err != nil {
+			log.Fatal("Invalid APCA_API_CLIENT_TIMEOUT: " + err.Error())
+		}
+		clientTimeout = parsedTimeout
+	}
+}
+
+func (client *Client) GetLastQuote(symbol string) (*LastQuoteResponse, error) {
+	endpoint, err := url.Parse(fmt.Sprintf("%s/%s/assets/%s", paperBase, apiVersion, symbol))
+	if err != nil {
+		fmt.Println("Error parsing the url...")
+		return nil, err
+	}
+
+	query := endpoint.Query()
+	query.Set("symbol", symbol)
+
+	endpoint.RawQuery = query.Encode()
+
+	resp, err := client.get(endpoint)
+	if err != nil {
+		fmt.Println("Error during the call to the endpoint...")
+		return nil, err
+	}
+
+	lastQuote := &LastQuoteResponse{}
+
+	marshallingError := unmarshall(resp, &lastQuote)
+	if marshallingError != nil {
+		fmt.Println("Error during the marshalling process...")
+		return nil, err
+	}
+
+	return lastQuote, nil
+}
+
+func verify(resp *http.Response) (err error) {
+	if resp.StatusCode >= http.StatusMultipleChoices {
+		var body []byte
+		defer resp.Body.Close()
+
+		body, err = ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+
+		apiErr := APIError{}
+
+		err = json.Unmarshal(body, &apiErr)
+		if err != nil {
+			return fmt.Errorf("json unmarshal error: %s", err.Error())
+		}
+		err = &apiErr
+	}
+
+	return
+}
+
+func unmarshall(resp *http.Response, data interface{}) error {
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(body, data)
+}

@@ -2,9 +2,8 @@ package vision
 
 import (
 	"fmt"
-	"testing"
-
 	"github.com/stretchr/testify/suite"
+	"testing"
 )
 
 type AlpacaTestSuite struct {

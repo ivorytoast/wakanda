@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 	"wakanda/common"
 )
@@ -18,12 +17,10 @@ const (
 )
 
 var (
-	DefaultClient = NewClient(common.TestCredentials())
-	paperBase = "https://paper-api.alpaca.markets"
-	base = "https://api.alpaca.markets"
-	dataURL = "https://data.alpaca.markets"
-	apiVersion = "v2"
-	clientTimeout = 10 * time.Second
+	DefaultClient = NewClient(common.Credentials())
+	paperBase = common.Configuration.Setup.PaperBaseUrl
+	apiVersion = common.Configuration.Setup.PaperApiVersion
+	clientTimeout = common.Configuration.Setup.PaperClientRequestTimeout * time.Second
 	do = defaultDo
 )
 
@@ -91,36 +88,10 @@ func (client *Client) get(u *url.URL) (*http.Response, error) {
 	return do(client, req)
 }
 
-func init() {
-	apiEnvURL := os.Getenv("APCA_API_BASE_URL")
-	apiLegacyURL := os.Getenv("ALPACA_BASE_URL")
-	if apiEnvURL != "" {
-		base = apiEnvURL
-	} else if apiLegacyURL != "" {
-		base = apiLegacyURL
-	}
-
-	dataEnvURL := os.Getenv("APCA_DATA_URL")
-	if dataEnvURL != "" {
-		dataURL = dataEnvURL
-	}
-
-	apiEnvVersion := os.Getenv("APCA_API_VERSION")
-	if apiEnvVersion != "" {
-		apiVersion = apiEnvVersion
-	}
-
-	clientEnvTimeout := os.Getenv("APCA_API_CLIENT_TIMEOUT")
-	if clientEnvTimeout != "" {
-		parsedTimeout, err := time.ParseDuration(clientEnvTimeout)
-		if err != nil {
-			log.Fatal("Invalid APCA_API_CLIENT_TIMEOUT: " + err.Error())
-		}
-		clientTimeout = parsedTimeout
-	}
-}
-
 func (client *Client) GetLastQuote(symbol string) (*LastQuoteResponse, error) {
+
+	log.Printf("Getting Last Quote")
+
 	endpoint, err := url.Parse(fmt.Sprintf("%s/%s/assets/%s", paperBase, apiVersion, symbol))
 	if err != nil {
 		fmt.Println("Error parsing the url...")
@@ -131,6 +102,9 @@ func (client *Client) GetLastQuote(symbol string) (*LastQuoteResponse, error) {
 	query.Set("symbol", symbol)
 
 	endpoint.RawQuery = query.Encode()
+
+	log.Printf(endpoint.Host)
+	log.Printf(endpoint.Path)
 
 	resp, err := client.get(endpoint)
 	if err != nil {

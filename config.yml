@@ -1,0 +1,13 @@
+# Authorization Environment Variables
+authorization:
+  UserPublicKey: "PKK7UJT90QVCMJRVR6O3"
+  UserPrivateKey: "YOUR_PRIVATE_KEY_GOES_HERE"
+  UserAuthKey: ""
+  PolygonApiKey: ""
+
+# Setup Environment Variables
+setup:
+  PaperBaseUrl: "https://paper-api.alpaca.markets"
+  PaperDataUrl: "https://paper-api.alpaca.markets"
+  PaperApiVersion: "v2"
+  PaperClientRequestTimeout: 10

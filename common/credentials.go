@@ -1,25 +1,14 @@
 package common
 
 import (
-	"fmt"
-	"os"
-	"sync"
+	"github.com/spf13/viper"
+	"log"
+	"time"
+	"wakanda/config"
 )
 
 var (
-	once sync.Once
-	key *APIKey
-)
-
-/*
-Polygon refers to the outside market data company.
-Account must be setup to use Polygon -- is not by default
- */
-const (
-	EnvApiKeyID = "APCA_API_KEY_ID"
-	EnvApiSecretKey = "APCA_API_SECRET_KEY"
-	EnvApiOAuth = "APCA_API_OAUTH"
-	EnvPolygonKeyID = "POLY_API_KEY_ID"
+    Configuration config.ApplicationConfig
 )
 
 type APIKey struct {
@@ -30,41 +19,35 @@ type APIKey struct {
 }
 
 func Credentials() *APIKey {
-	s := os.Getenv(EnvPolygonKeyID)
+	viper.SetConfigName("config")
+	viper.AddConfigPath("../")
 
-	var polygonKeyID string
-	if s != "" {
-		polygonKeyID = s
-	} else {
-		polygonKeyID = os.Getenv(EnvApiKeyID)
+	if err := viper.ReadInConfig(); err != nil {
+		log.Fatalf("Error reading config file, %s", err)
+	}
+	err := viper.Unmarshal(&Configuration)
+	if err != nil {
+		log.Fatalf("unable to decode into struct, %v", err)
 	}
 
-	fmt.Println("polygonKeyID: " + polygonKeyID)
+	if Configuration.Authorization.UserPrivateKey == "YOUR_PRIVATE_KEY_GOES_HERE" || Configuration.Authorization.UserPrivateKey == "" {
+		log.Fatal("Before sending any requests you must put your PRIVATE KEY into the config.yml!")
+	}
+
+	log.Printf("public key is             : [%s]", Configuration.Authorization.UserPublicKey)
+	log.Printf("private key is            : [%s]", Configuration.Authorization.UserPrivateKey)
+	log.Printf("auth key is               : [%s]", Configuration.Authorization.UserAuthKey)
+	log.Printf("polygon key is            : [%s]", Configuration.Authorization.PolygonApiKey)
+
+	log.Printf("paper base url is         : [%s]", Configuration.Setup.PaperBaseUrl)
+	log.Printf("paper data url is         : [%s]", Configuration.Setup.PaperDataUrl)
+	log.Printf("paper api version is      : [%s]", Configuration.Setup.PaperApiVersion)
+	log.Printf("paper request timeout is  : [%s]", Configuration.Setup.PaperClientRequestTimeout * time.Second)
 
 	return &APIKey {
-		ID: os.Getenv(EnvApiKeyID),
-		PolygonKeyID: polygonKeyID,
-		Secret: os.Getenv(EnvApiSecretKey),
-		OAuth: os.Getenv(EnvApiOAuth),
-	}
-}
-
-func TestCredentials() *APIKey {
-	s := os.Getenv(EnvPolygonKeyID)
-
-	var polygonKeyID string
-	if s != "" {
-		polygonKeyID = s
-	} else {
-		polygonKeyID = os.Getenv(EnvApiKeyID)
-	}
-
-	fmt.Println("polygonKeyID: " + polygonKeyID)
-
-	return &APIKey{
-		ID: "PKX3UF3428XKJKNL3G6U",
-		PolygonKeyID: polygonKeyID,
-		Secret: "Dwm841cYo68pCKr4R5STBwRRKvAlZM7JTEibVD4z",
-		OAuth: os.Getenv(EnvApiOAuth),
+		ID: Configuration.Authorization.UserPublicKey,
+		Secret: Configuration.Authorization.UserPrivateKey,
+		OAuth: Configuration.Authorization.UserAuthKey,
+		PolygonKeyID: Configuration.Authorization.PolygonApiKey,
 	}
 }
